@@ -19,6 +19,8 @@ Record, edit and export locally.
 - Preview, rename and download as soon as you stop
 - Trim, crop, mute, volume and playback speed in a small editor
 - Export to MP4, WebM, GIF, MP3 or WAV, all on your machine
+- Export uses your machine's video hardware where the browser allows it, and
+  falls back to a software encoder where it does not
 
 ## Quick start
 
@@ -39,6 +41,17 @@ npm run preview
 
 The output in `dist/` is plain static files. It runs on Cloudflare Pages,
 Netlify, Vercel, GitHub Pages or any web server.
+
+Serve it with these two headers where you can, because they let the export step
+use every processor core:
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`vercel.json` sets them for Vercel. On a host that cannot set headers, a service
+worker adds them instead. Either way the app works.
 
 ## Supported browsers
 

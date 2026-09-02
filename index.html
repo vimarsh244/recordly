@@ -15,6 +15,30 @@
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       } catch (e) {}
     </script>
+    <script>
+      // Ask for cross origin isolation. It lets the export step use every
+      // processor core. The service worker only adds headers to this app's own
+      // responses; nothing leaves the device. Isolation starts at the next
+      // navigation, so the first visit reloads once. Everything works without
+      // it, only more slowly. Set recordly.coi to "off" to skip all of this.
+      (function () {
+        if (window.crossOriginIsolated) return;
+        if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+        try {
+          if (localStorage.getItem('recordly.coi') === 'off') return;
+          if (sessionStorage.getItem('recordly.coi.tried') === 'yes') return;
+          navigator.serviceWorker.register('coi-serviceworker.js', { scope: './' }).then(
+            function () {
+              return navigator.serviceWorker.ready.then(function () {
+                sessionStorage.setItem('recordly.coi.tried', 'yes');
+                window.location.reload();
+              });
+            },
+            function () {}
+          );
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

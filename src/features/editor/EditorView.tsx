@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApp } from '../../app/store'
 import { clamp, formatBytes } from '../../lib/format'
-import { preloadFfmpeg } from '../../media/ffmpeg/client'
+import { preloadExport } from '../../media/export'
 import type { Recording } from '../../media/recording/types'
 import { CropTool, cropForAspect } from './CropTool'
 import { ExportPanel } from './ExportPanel'
@@ -33,7 +33,7 @@ export function EditorView({ recording }: { recording: Recording }) {
   const cameraRef = useRef<HTMLVideoElement>(null)
   const duration = recording.durationMs / 1000
 
-  useEffect(() => preloadFfmpeg(), [])
+  useEffect(() => preloadExport(), [])
 
   // Keep playback inside the trimmed selection, and drive the playhead.
   useEffect(() => {

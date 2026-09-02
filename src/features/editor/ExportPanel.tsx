@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
-import { formatBytes, safeFileName } from '../../lib/format'
-import { ExportCancelled, runExport } from '../../media/ffmpeg/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { formatBytes, formatDuration, safeFileName } from '../../lib/format'
+import { ExportCancelled, planEngine, preloadExport, runExport, type ExportProgress } from '../../media/export'
 import type { Recording } from '../../media/recording/types'
 import { editsAreEmpty, type Edits, type ExportFormat, type ExportOptions, type ExportQuality, type ExportResolution } from '../project/types'
 import { Progress } from '../../components/Progress'
@@ -19,18 +19,63 @@ function download(blob: Blob, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
+/** Words for the stage, so the panel never sits on one frozen label. */
+function stageLabel(progress: ExportProgress | null, elapsedMs: number): string {
+  if (!progress) return 'Starting'
+  if (progress.stage === 'preparing') {
+    return progress.engine === 'ffmpeg' && elapsedMs > 3000 ? 'Loading the encoder' : 'Preparing'
+  }
+  if (progress.stage === 'finishing') return 'Writing the file'
+  if (progress.ratio === null) return 'Encoding'
+  return `Encoding ${Math.round(progress.ratio * 100)}%`
+}
+
+/** Rough time left, from how far the export got in the time it has taken. */
+function remainingLabel(progress: ExportProgress | null, elapsedMs: number): string | null {
+  if (!progress || progress.ratio === null || progress.ratio <= 0.02 || elapsedMs < 1500) return null
+  const total = elapsedMs / progress.ratio
+  const left = total - elapsedMs
+  if (left < 1000) return null
+  return `about ${formatDuration(left)} left`
+}
+
 export function ExportPanel({ recording, edits }: Props) {
   const durationSeconds = recording.durationMs / 1000
   const [options, setOptions] = useState<ExportOptions>({ format: 'mp4', quality: 'high', resolution: 'original' })
-  const [progress, setProgress] = useState<number | null>(null)
+  const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [busy, setBusy] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
   const [status, setStatus] = useState<string | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
 
   const selectionSeconds = Math.max(0, edits.trimEnd - edits.trimStart)
   const untouched = editsAreEmpty(edits, durationSeconds)
-  const canCopyOriginal =
-    untouched && options.format === recording.container && options.quality === 'high' && options.resolution === 'original'
+  const source = useMemo(
+    () => ({
+      width: recording.width,
+      height: recording.height,
+      durationSeconds,
+      hasAudio: recording.hasAudio,
+      container: recording.container,
+    }),
+    [recording.width, recording.height, durationSeconds, recording.hasAudio, recording.container],
+  )
+
+  const engine = useMemo(() => planEngine(edits, options, source), [edits, options, source])
+  const canCopyOriginal = engine === 'copy' && untouched
+
+  // Only fetch the thirty megabyte WebAssembly build once the chosen settings
+  // actually need it. Most exports never do.
+  useEffect(() => preloadExport(engine === 'ffmpeg'), [engine])
+
+  // A clock the user can watch, so a slow export never looks frozen.
+  useEffect(() => {
+    if (!busy) return
+    const startedAt = performance.now()
+    setElapsedMs(0)
+    const timer = setInterval(() => setElapsedMs(performance.now() - startedAt), 250)
+    return () => clearInterval(timer)
+  }, [busy])
 
   async function start() {
     setStatus(null)
@@ -44,25 +89,21 @@ export function ExportPanel({ recording, edits }: Props) {
 
     setBusy(true)
     setProgress(null)
-    const handle = runExport(
-      recording.screen.blob,
-      `input.${recording.container}`,
+    const startedAt = performance.now()
+    const handle = runExport({
+      input: recording.screen.blob,
+      inputName: `input.${recording.container}`,
       edits,
       options,
-      {
-        width: recording.width,
-        height: recording.height,
-        durationSeconds,
-        hasAudio: recording.hasAudio,
-        container: recording.container,
-      },
-      setProgress,
-    )
+      source,
+      onProgress: setProgress,
+    })
     cancelRef.current = handle.cancel
     try {
       const blob = await handle.result
       download(blob, fileName)
-      setStatus(`Saved ${formatBytes(blob.size)}.`)
+      const took = formatDuration(performance.now() - startedAt)
+      setStatus(`Saved ${formatBytes(blob.size)} in ${took}.`)
     } catch (error) {
       setStatus(
         error instanceof ExportCancelled
@@ -77,7 +118,8 @@ export function ExportPanel({ recording, edits }: Props) {
   }
 
   const heavyGif = options.format === 'gif' && selectionSeconds > 20
-  const large = recording.width * recording.height > 1920 * 1080 && options.resolution === 'original'
+  const heavyFrame = recording.width * recording.height > 1920 * 1080 && options.resolution === 'original'
+  const remaining = remainingLabel(progress, elapsedMs)
 
   return (
     <div className="panel" style={{ maxWidth: 'none' }}>
@@ -144,14 +186,19 @@ export function ExportPanel({ recording, edits }: Props) {
 
       {busy ? (
         <div style={{ padding: '8px 10px' }}>
-          <Progress ratio={progress} />
+          <Progress ratio={progress?.ratio ?? null} />
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <span className="meta">{progress === null ? 'Preparing export' : `Exporting ${Math.round(progress * 100)}%`}</span>
+            <span className="meta">{stageLabel(progress, elapsedMs)}</span>
             <span className="spacer" />
             <button className="btn btn-sm" onClick={() => cancelRef.current?.()}>
               Cancel
             </button>
           </div>
+          <p className="note">
+            {formatDuration(elapsedMs)} so far
+            {remaining ? `, ${remaining}` : ''}
+            {progress?.engine === 'ffmpeg' ? '. Software encoding, so this takes a while.' : ''}
+          </p>
         </div>
       ) : (
         <button className="btn btn-primary btn-block" onClick={() => void start()}>
@@ -173,7 +220,15 @@ export function ExportPanel({ recording, edits }: Props) {
 
       {status ? <p className="note">{status}</p> : null}
       {heavyGif ? <p className="note">Long GIFs get large. Trim the selection or pick a smaller size.</p> : null}
-      {large ? <p className="note">This export may use significant memory. Try 1080p for faster processing.</p> : null}
+      {!busy && engine === 'ffmpeg' && heavyFrame ? (
+        <p className="note">Software encoding at this frame size is slow and uses a lot of memory. Try 1080p.</p>
+      ) : null}
+      {!busy && engine === 'ffmpeg' ? (
+        <p className="note">
+          These settings need software encoding, which is slow. MP4 or WebM without a speed change uses your
+          hardware instead.
+        </p>
+      ) : null}
       {canCopyOriginal ? <p className="note">No edits to apply, so the original file is saved directly.</p> : null}
     </div>
   )
