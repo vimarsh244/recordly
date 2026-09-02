@@ -18,7 +18,7 @@ project           metadata in IndexedDB, edits kept as state
       |
 editor            preview, trim, crop, audio, speed
       |
-export pipeline   ffmpeg.wasm in its own worker
+export pipeline   browser codecs first, ffmpeg.wasm as the fallback
       |
 local download
 ```
@@ -75,23 +75,80 @@ you go.
 
 ## Export
 
+Export is the slowest thing Recordly does, so it has three paths. The cheapest
+one that gives the right file wins. `src/media/export/plan.ts` makes that
+choice. It is a pure function with unit tests.
+
+```text
+1  copy        The request changes nothing, so the recorded file is saved.
+2  webcodecs   The browser encoders do the work, on the media hardware.
+3  ffmpeg      FFmpeg compiled to WebAssembly, in software.
+```
+
+### 1. Copy
+
+Nothing was edited and the format matches the recorded container. The file goes
+straight to disk. No re-encode, no wait.
+
+### 2. Browser codecs
+
+`src/media/export/webcodecs.ts` drives WebCodecs through Mediabunny. Frames are
+decoded and encoded by the same components the browser uses to play video, so
+the graphics or media hardware does the work. This is between ten and fifty
+times faster than software encoding, and it uses far less memory because no
+frame ever passes through a virtual file system.
+
+This path covers MP4, WebM and WAV, with trim, crop, resize, frame rate, mute
+and volume. Speed changes go through it only when the output has no audio,
+because changing the rate of audio without changing its pitch is a filter, not
+a codec feature.
+
+### 3. FFmpeg in WebAssembly
+
 `src/media/ffmpeg/args.ts` turns edit state and export options into an ffmpeg
-command. It is a pure function with unit tests. `src/media/ffmpeg/client.ts`
-loads ffmpeg.wasm on demand and runs it in the worker the library creates, so
-the interface stays responsive and export continues while the tab is in the
-background.
+command, also a pure function with unit tests. `src/media/ffmpeg/client.ts`
+loads the build and runs it in the worker the library creates.
 
-When nothing was edited and the format matches the recorded container, the
-original file is saved directly. No re-encode, no wait.
+This path handles GIF, MP3, speed changes with audio, and any file the browser
+decoders refuse. If the browser accepts the fast path and then fails, this path
+takes over on its own and the user presses nothing.
 
-Cancelling terminates the worker and frees its memory. The source recording is
-never touched by an export.
+Two things keep it as quick as it can be:
+
+- The multi threaded build runs whenever the page is cross origin isolated. See
+  the next section. It gets one thread per core, less one for the interface.
+- Progress is read from the encoder log, not from the container header. A file
+  from MediaRecorder carries no duration, so the built in progress callback
+  reports nothing and the panel used to sit on one frozen label.
+
+Cancelling stops the conversion, or terminates the worker, and frees the memory.
+The source recording is never touched by an export.
+
+## Cross origin isolation
+
+The multi threaded FFmpeg build needs `SharedArrayBuffer`, and a page only gets
+that when it is cross origin isolated. That needs two response headers:
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+The dev and preview servers send them (`vite.config.ts`). Static hosts usually
+do not, so `public/coi-serviceworker.js` adds them to this app's own responses.
+It reloads the page once, on the first visit, because isolation starts at the
+next navigation. Nothing leaves the device and no request is redirected. To turn
+it off, set `recordly.coi` to `off` in local storage. Everything still works
+without isolation, only more slowly.
+
+Recordly loads no cross origin resource, so `require-corp` costs it nothing.
 
 ## Loading
 
-The recorder is in the initial bundle. ffmpeg.wasm is about 32 MB and is fetched
-only when the editor is open or an export starts. Opening Recordly never waits
-for it.
+The recorder is in the initial bundle. The Mediabunny module is about 175 kB
+compressed and is fetched when the editor opens. The FFmpeg build is about
+32 MB and is fetched only when the chosen settings actually need it, which most
+exports do not.
 
 ## Folder map
 
@@ -108,7 +165,8 @@ src/
     capture/     getDisplayMedia and getUserMedia wrappers
     audio/       mixing
     recording/   engine, quality, types
-    ffmpeg/      export planning and client
+    export/      engine choice, browser codec path
+    ffmpeg/      command planning and WebAssembly client
   storage/
     opfs/        chunk writer worker and file access
     indexeddb/   metadata

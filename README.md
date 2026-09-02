@@ -19,6 +19,8 @@ Record, edit and export locally.
 - Preview, rename and download as soon as you stop
 - Trim, crop, mute, volume and playback speed in a small editor
 - Export to MP4, WebM, GIF, MP3 or WAV, all on your machine
+- Export uses your machine's video hardware where the browser allows it, and
+  falls back to a software encoder where it does not
 
 ## Quick start
 

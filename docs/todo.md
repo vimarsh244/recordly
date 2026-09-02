@@ -44,7 +44,7 @@ full specification is in [plan-to-build.md](plan-to-build.md).
 - [x] MP4, WebM, GIF, MP3 and WAV
 - [x] Quality presets: high, balanced, small file
 - [x] Resolution choice down to 480p
-- [x] Real progress, not a fake bar
+- [x] Real progress, read from the encoder, with elapsed and remaining time
 - [x] Cancel that frees memory and keeps the original safe
 - [x] Stream copy when there is nothing to change
 - [x] Warnings for long GIFs and very large frames
@@ -59,11 +59,13 @@ full specification is in [plan-to-build.md](plan-to-build.md).
 - [x] Memory fallback when disk writes are not available
 - [x] Metadata in IndexedDB, media never in IndexedDB
 - [x] Recovery of an unfinished recording after a crash or reload
-- [x] ffmpeg.wasm loaded on demand, never during startup
+- [x] ffmpeg.wasm loaded on demand, and only when the settings need it
 - [x] Export runs in a worker and continues while the tab is hidden
 - [x] Central capability detection, no browser name checks
 - [x] Static build with no backend
-- [ ] WebCodecs path for trimming and thumbnails where it is faster
+- [x] WebCodecs export path, with the WebAssembly encoder as the fallback
+- [x] Multi threaded ffmpeg.wasm, with cross origin isolation from a service worker
+- [ ] WebCodecs path for timeline thumbnails
 - [ ] OffscreenCanvas compositing for camera and effects at export time
 - [ ] Memory and speed profiling for 30 and 60 minute recordings
 - [ ] Storage usage and quota shown in the interface
