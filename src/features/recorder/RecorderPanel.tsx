@@ -7,6 +7,16 @@ import { RecordingBar } from './RecordingBar'
 import { CountdownOverlay } from './CountdownOverlay'
 import { useEngineState } from './useEngine'
 
+/** Whether the camera can be opened without asking the user again. */
+async function cameraAlreadyAllowed(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+    return status.state === 'granted'
+  } catch {
+    return false
+  }
+}
+
 function DeviceRow({
   label,
   devices,
@@ -45,6 +55,25 @@ export function RecorderPanel() {
   const [mics, setMics] = useState<DeviceOption[]>([])
   const [cameras, setCameras] = useState<DeviceOption[]>([])
   const caps = capabilities()
+
+  // A recording stops the camera stream. Without this the toggle still says
+  // On when the user comes back, but the preview is gone and the camera is
+  // dead until the next recording. Only reopen when the browser has already
+  // granted the camera, so returning to the page never brings a surprise
+  // permission prompt.
+  useEffect(() => {
+    if (state.status !== 'idle' || !settings.camera) return
+    if (recordingEngine.getCameraStream()) return
+    let cancelled = false
+    void cameraAlreadyAllowed().then((allowed) => {
+      if (!allowed || cancelled) return
+      if (recordingEngine.getCameraStream()) return
+      void recordingEngine.openCamera(settings.cameraDeviceId).catch(() => undefined)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [state.status, settings.camera, settings.cameraDeviceId])
 
   useEffect(() => {
     if (!openMenu) return
@@ -100,7 +129,7 @@ export function RecorderPanel() {
 
   return (
     <>
-      {state.status === 'countdown' ? (
+      {state.status === 'countdown' && state.countdown > 0 ? (
         <CountdownOverlay value={state.countdown} onCancel={() => recordingEngine.cancelCountdown()} />
       ) : null}
 
@@ -213,7 +242,7 @@ export function RecorderPanel() {
         <div className="divider" />
 
         <button className="btn btn-primary btn-block" onClick={start} disabled={starting}>
-          {starting ? 'Waiting for the picker' : 'Start Recording'}
+          {starting ? 'Starting' : 'Start Recording'}
         </button>
 
         <p className="note">Your recordings stay on this device.</p>

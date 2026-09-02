@@ -88,7 +88,7 @@ export function App() {
         Everything runs on device.
       </footer>
 
-      {idle || engine.status === 'countdown' ? <CameraPreview /> : null}
+      {idle || engine.status === 'countdown' || engine.status === 'starting' ? <CameraPreview /> : null}
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )

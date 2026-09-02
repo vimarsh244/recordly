@@ -20,6 +20,10 @@ export interface StartOptions {
 }
 
 const CHUNK_MS = 3000
+/** How long the steps between the countdown and the first chunk may take. */
+const START_TIMEOUT_MS = 15000
+/** How long the recorders get to report that they stopped. */
+const STOP_TIMEOUT_MS = 8000
 
 const IDLE_STATE: EngineState = {
   status: 'idle',
@@ -64,6 +68,9 @@ class RecordingEngine {
   private autoStop: number | null = null
   private countdownTimer: number | null = null
   private stopPromise: Promise<Recording | null> | null = null
+  /** Counts start attempts, so a slow start that was cancelled cannot come
+   * back to life and take over the engine. */
+  private startToken = 0
   private cameraListeners = new Set<() => void>()
   private finishedListeners = new Set<(recording: Recording) => void>()
 
@@ -99,7 +106,10 @@ class RecordingEngine {
 
   /** Live camera preview, available before a recording starts. */
   async openCamera(deviceId?: string): Promise<void> {
-    if (this.cameraStream) this.closeCamera()
+    if (this.cameraStream) {
+      stopStream(this.cameraStream)
+      this.cameraStream = null
+    }
     this.cameraStream = await requestCamera(deviceId)
     this.notifyCamera()
   }
@@ -118,9 +128,11 @@ class RecordingEngine {
       return
     }
 
+    const token = ++this.startToken
     this.set({ ...IDLE_STATE, status: 'starting' })
     try {
       this.screenStream = await requestScreen(options.systemAudio, options.frameRate)
+      if (this.startToken !== token) return this.abandonStart()
       if (options.mic) {
         try {
           this.micStream = await requestMicrophone(options.micDeviceId)
@@ -135,6 +147,7 @@ class RecordingEngine {
           this.set({ error: 'Camera unavailable. Recording without it.' })
         }
       }
+      if (this.startToken !== token) return this.abandonStart()
     } catch (error) {
       this.cleanupStreams()
       this.set({ status: 'idle', error: error instanceof CaptureError ? error.message : 'Recording could not start.' })
@@ -143,15 +156,30 @@ class RecordingEngine {
 
     if (options.countdownSeconds > 0) {
       await this.runCountdown(options.countdownSeconds)
-      if (this.state.status === 'idle') return
+      if (this.startToken !== token) return this.abandonStart()
+    }
+
+    // The user can press the browser's own stop sharing control while the
+    // countdown runs. Recording an ended track gives an empty file.
+    if (this.screenStream?.getVideoTracks()[0]?.readyState === 'ended') {
+      this.cleanupStreams()
+      this.set({ ...IDLE_STATE, error: 'Screen sharing stopped before the recording started.' })
+      return
     }
 
     try {
-      await this.beginCapture(options)
+      await withTimeout(this.beginCapture(options, token), START_TIMEOUT_MS)
     } catch {
+      if (this.startToken !== token) return
+      this.startToken++
       this.cleanupStreams()
-      this.set({ status: 'idle', error: 'Recording could not start.' })
+      this.set({ ...IDLE_STATE, error: 'Recording could not start. Try again.' })
     }
+  }
+
+  /** Drops a start that something else has already cancelled or replaced. */
+  private abandonStart(): void {
+    this.cleanupStreams()
   }
 
   private runCountdown(seconds: number): Promise<void> {
@@ -160,7 +188,11 @@ class RecordingEngine {
       const tick = () => {
         const next = this.state.countdown - 1
         if (next <= 0) {
-          this.set({ countdown: 0 })
+          // Back to 'starting' before the capture is built. The countdown
+          // covers the whole screen, and it must never be what the user looks
+          // at if the next step is slow.
+          this.countdownTimer = null
+          this.set({ status: 'starting', countdown: 0 })
           resolve()
           return
         }
@@ -171,7 +203,7 @@ class RecordingEngine {
     })
   }
 
-  private async beginCapture(options: StartOptions) {
+  private async beginCapture(options: StartOptions, token: number) {
     const screenTrack = this.screenStream!.getVideoTracks()[0]
     const settings = screenTrack.getSettings()
     const width = settings.width ?? 1920
@@ -188,9 +220,14 @@ class RecordingEngine {
     this.createdAt = Date.now()
     const container = containerFor(this.mimeType)
 
-    this.screenWriter = await openTrackWriter(this.sessionId, `screen.${container}`, this.mimeType, (blob) =>
+    const screenWriter = await openTrackWriter(this.sessionId, `screen.${container}`, this.mimeType, (blob) =>
       this.memoryBlobs.set('screen', blob),
     )
+    if (this.startToken !== token) {
+      await screenWriter.close().catch(() => undefined)
+      return
+    }
+    this.screenWriter = screenWriter
 
     const recorderOptions: MediaRecorderOptions = {
       videoBitsPerSecond: videoBitrate(width, height, frameRate, options.quality),
@@ -202,22 +239,27 @@ class RecordingEngine {
     this.screenRecorder.ondataavailable = (event) => {
       if (event.data.size === 0) return
       this.set({ bytes: this.state.bytes + event.data.size })
-      void this.screenWriter?.write(event.data)
+      void this.screenWriter?.write(event.data).catch(() => undefined)
     }
     this.screenRecorder.start(CHUNK_MS)
 
     if (this.cameraStream) {
       const cameraTrack = this.cameraStream.getVideoTracks()[0]
       if (cameraTrack) {
-        this.cameraWriter = await openTrackWriter(this.sessionId, `camera.${container}`, this.mimeType, (blob) =>
+        const cameraWriter = await openTrackWriter(this.sessionId, `camera.${container}`, this.mimeType, (blob) =>
           this.memoryBlobs.set('camera', blob),
         )
+        if (this.startToken !== token) {
+          await cameraWriter.close().catch(() => undefined)
+          return
+        }
+        this.cameraWriter = cameraWriter
         this.cameraRecorder = new MediaRecorder(new MediaStream([cameraTrack]), {
           ...recorderOptions,
           videoBitsPerSecond: videoBitrate(1280, 720, 30, options.quality),
         })
         this.cameraRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) void this.cameraWriter?.write(event.data)
+          if (event.data.size > 0) void this.cameraWriter?.write(event.data).catch(() => undefined)
         }
         this.cameraRecorder.start(CHUNK_MS)
       }
@@ -294,10 +336,16 @@ class RecordingEngine {
   }
 
   cancelCountdown(): void {
-    if (this.countdownTimer !== null) self.clearTimeout(this.countdownTimer)
-    this.countdownTimer = null
+    if (this.state.status === 'recording' || this.state.status === 'paused') return
+    this.startToken++
+    this.clearCountdown()
     this.cleanupStreams()
     this.set({ ...IDLE_STATE })
+  }
+
+  private clearCountdown(): void {
+    if (this.countdownTimer !== null) self.clearTimeout(this.countdownTimer)
+    this.countdownTimer = null
   }
 
   private async finish(): Promise<Recording | null> {
@@ -307,10 +355,16 @@ class RecordingEngine {
     if (this.autoStop !== null) self.clearTimeout(this.autoStop)
     this.ticker = null
     this.autoStop = null
+    this.clearCountdown()
 
-    await Promise.all([stopRecorder(this.screenRecorder), stopRecorder(this.cameraRecorder)])
-    const screenBytes = (await this.screenWriter?.close()) ?? 0
-    await this.cameraWriter?.close()
+    // A recorder that never reports its stop must not hold the app in the
+    // stopping state. Whatever landed on disk is still a recording.
+    await withTimeout(
+      Promise.all([stopRecorder(this.screenRecorder), stopRecorder(this.cameraRecorder)]),
+      STOP_TIMEOUT_MS,
+    ).catch(() => undefined)
+    const screenBytes = await this.screenWriter?.close().catch(() => this.screenWriter?.bytesWritten() ?? 0) ?? 0
+    await this.cameraWriter?.close().catch(() => undefined)
 
     const container = containerFor(this.mimeType)
     const screenTrack = await this.resolveTrack('screen', `screen.${container}`)
@@ -382,6 +436,27 @@ class RecordingEngine {
     this.cameraStream = null
     this.notifyCamera()
   }
+}
+
+/**
+ * Rejects if the work does not finish in time. Storage and media calls can
+ * stay unanswered for ever in some browsers, and a start that never finishes
+ * leaves the user in front of a screen with no way out.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = self.setTimeout(() => reject(new Error('timed out')), ms)
+    work.then(
+      (value) => {
+        self.clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        self.clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 function stopRecorder(recorder: MediaRecorder | null): Promise<void> {
