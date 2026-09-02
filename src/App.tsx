@@ -68,7 +68,7 @@ export function App() {
         {recording ? (
           <EditorView recording={recording} />
         ) : (
-          <div style={{ width: '100%', maxWidth: 420 }}>
+          <div style={{ width: '100%', maxWidth: 460 }}>
             <RecoveryBanner onResolved={() => setReloadKey((key) => key + 1)} />
             <RecorderPanel />
             <RecentRecordings reloadKey={reloadKey} />
