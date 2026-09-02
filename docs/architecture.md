@@ -82,6 +82,7 @@ choice. It is a pure function with unit tests.
 ```text
 1  copy        The request changes nothing, so the recorded file is saved.
 2  webcodecs   The browser encoders do the work, on the media hardware.
+2b gif         The browser decoder, plus the GIF writer in this repository.
 3  ffmpeg      FFmpeg compiled to WebAssembly, in software.
 ```
 
@@ -103,14 +104,39 @@ and volume. Speed changes go through it only when the output has no audio,
 because changing the rate of audio without changing its pitch is a filter, not
 a codec feature.
 
+### 2b. GIF
+
+No browser encodes GIF, but every browser decodes video, and GIF is a simple
+format. `src/media/export/gif.ts` reads frames through the Mediabunny
+`CanvasSink`, which decodes on the hardware and does the crop and the resize on
+the way out. `src/media/gif/encoder.ts` writes the file. Neither part loads
+FFmpeg, so a GIF no longer costs a thirty megabyte download and minutes of
+software decoding.
+
+The writer works the way the `palettegen` and `paletteuse` filters of FFmpeg
+do, in two passes over the frames:
+
+1. A sample of sixteen frames builds one palette of 255 colours by median cut.
+2. Every frame is mapped to that palette and packed with LZW.
+
+One palette for the whole file, rather than one per frame, is what lets the
+writer compare a frame with the one before it. Only the rectangle that changed
+is written, the pixels inside it that did not change are written as
+transparent, and a frame that is the same as the one before it is not written
+at all: its time is added to the frame before. All three make the file smaller
+as well as quicker.
+
+`src/media/gif/encoder.ts` has no DOM in it, so the unit tests read the bytes
+back with their own GIF reader and compare the pixels.
+
 ### 3. FFmpeg in WebAssembly
 
 `src/media/ffmpeg/args.ts` turns edit state and export options into an ffmpeg
 command, also a pure function with unit tests. `src/media/ffmpeg/client.ts`
 loads the build and runs it in the worker the library creates.
 
-This path handles GIF, MP3, speed changes with audio, and any file the browser
-decoders refuse. If the browser accepts the fast path and then fails, this path
+This path handles MP3, speed changes with audio, and any file the browser
+decoders refuse, GIF included when the browser cannot decode the recording. If the browser accepts the fast path and then fails, this path
 takes over on its own and the user presses nothing.
 
 Two things keep it as quick as it can be:

@@ -80,6 +80,12 @@ describe('planExport', () => {
     expect(plan.args.join(' ')).toContain('palettegen')
   })
 
+  it('drops the frame rate of a gif before it scales the frames', () => {
+    const plan = planExport('input.webm', defaultEdits(60), { ...options, format: 'gif' }, source)
+    const chain = plan.args[plan.args.indexOf('-filter_complex') + 1]
+    expect(chain.indexOf('fps=')).toBeLessThan(chain.indexOf('scale='))
+  })
+
   it('strips video for audio only formats', () => {
     const plan = planExport('input.webm', defaultEdits(60), { ...options, format: 'wav' }, source)
     expect(plan.args).toContain('-vn')
