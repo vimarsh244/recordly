@@ -68,7 +68,7 @@ export function App() {
         {recording ? (
           <EditorView recording={recording} />
         ) : (
-          <div style={{ width: '100%', maxWidth: 420 }}>
+          <div style={{ width: '100%', maxWidth: 460 }}>
             <RecoveryBanner onResolved={() => setReloadKey((key) => key + 1)} />
             <RecorderPanel />
             <RecentRecordings reloadKey={reloadKey} />
@@ -77,7 +77,7 @@ export function App() {
       </main>
 
       <footer className="footer">
-        Recording, editing and export run on this device. Nothing is uploaded.
+        Recording, editing and export run on this device.
       </footer>
 
       {idle || engine.status === 'countdown' ? <CameraPreview /> : null}

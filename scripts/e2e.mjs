@@ -31,10 +31,17 @@ await page.waitForTimeout(6000)
 await page.screenshot({ path: `${dir}/recording.png` })
 await page.getByRole('button', { name: 'Stop' }).click()
 
-await page.getByRole('button', { name: 'Download original' }).waitFor({ timeout: 20000 })
+await page.getByRole('button', { name: 'Download', exact: true }).first().waitFor({ timeout: 20000 })
 console.log('editor opened')
 await page.waitForTimeout(1500)
 await page.screenshot({ path: `${dir}/editor.png` })
+
+// Hovering the timeline shows a frame preview at that time.
+const hover = await page.locator('.timeline').boundingBox()
+await page.mouse.move(hover.x + hover.width * 0.5, hover.y + 25)
+await page.locator('.tl-preview').waitFor({ timeout: 5000 })
+await page.waitForTimeout(600)
+await page.screenshot({ path: `${dir}/editor-scrub-preview.png` })
 
 // Trim to the middle of the clip using the timeline handles.
 const timeline = await page.locator('.timeline').boundingBox()
@@ -53,7 +60,7 @@ await page.getByRole('tab', { name: 'Export' }).click()
 await page.selectOption('#export-format', 'mp4')
 await page.selectOption('#export-resolution', '720')
 const downloadPromise = page.waitForEvent('download', { timeout: 240000 })
-await page.getByRole('button', { name: 'Export' }).click()
+await page.getByRole('button', { name: 'Export and download' }).click()
 await page.waitForTimeout(2500)
 await page.screenshot({ path: `${dir}/exporting.png` })
 const download = await downloadPromise

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApp } from '../../app/store'
-import { clamp, formatBytes, safeFileName } from '../../lib/format'
+import { clamp, formatBytes } from '../../lib/format'
 import { preloadExport } from '../../media/export'
 import type { Recording } from '../../media/recording/types'
 import { CropTool, cropForAspect } from './CropTool'
@@ -113,7 +113,7 @@ export function EditorView({ recording }: { recording: Recording }) {
     ? {
         position: 'relative',
         overflow: 'hidden',
-        height: '58vh',
+        height: '66vh',
         aspectRatio: `${recording.width * cropped.width} / ${recording.height * cropped.height}`,
       }
     : { position: 'relative', overflow: 'hidden', lineHeight: 0 }
@@ -149,16 +149,8 @@ export function EditorView({ recording }: { recording: Recording }) {
           style={{ flex: 1, background: 'transparent', border: 0, fontWeight: 600, fontSize: 15 }}
         />
         <span className="meta">{formatBytes(recording.bytes)}</span>
-        <button
-          className="btn btn-sm"
-          onClick={() => {
-            const link = document.createElement('a')
-            link.href = recording.screen.url
-            link.download = `${safeFileName(recording.name)}.${recording.container}`
-            link.click()
-          }}
-        >
-          Download original
+        <button className="btn btn-sm btn-primary" onClick={() => setTab('export')}>
+          Download
         </button>
       </div>
 
@@ -199,6 +191,8 @@ export function EditorView({ recording }: { recording: Recording }) {
 
           <Timeline
             duration={duration}
+            previewSrc={recording.screen.url}
+            previewAspect={recording.width / recording.height}
             trimStart={edits.trimStart}
             trimEnd={edits.trimEnd}
             currentTime={currentTime}
@@ -264,6 +258,10 @@ export function EditorView({ recording }: { recording: Recording }) {
               <div className="row" style={{ gap: 8, padding: '8px 10px' }}>
                 <button className="btn btn-sm btn-ghost" onClick={() => commitEdits({ trimStart: 0, trimEnd: duration })}>
                   Reset trim
+                </button>
+                <span className="spacer" />
+                <button className="btn btn-sm" onClick={() => setTab('export')}>
+                  Download
                 </button>
               </div>
             </div>

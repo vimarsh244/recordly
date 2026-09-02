@@ -48,6 +48,9 @@ full specification is in [plan-to-build.md](plan-to-build.md).
 - [x] Cancel that frees memory and keeps the original safe
 - [x] Stream copy when there is nothing to change
 - [x] Warnings for long GIFs and very large frames
+- [x] Export on the machine's video hardware where the browser has an encoder
+- [x] Automatic fall back to the software encoder, with no second press
+- [x] The panel says which encoder is running and which settings avoid the slow one
 - [ ] Estimated output size before export
 - [ ] Advanced settings for codec, frame rate and bitrate
 
@@ -65,7 +68,9 @@ full specification is in [plan-to-build.md](plan-to-build.md).
 - [x] Static build with no backend
 - [x] WebCodecs export path, with the WebAssembly encoder as the fallback
 - [x] Multi threaded ffmpeg.wasm, with cross origin isolation from a service worker
+- [x] Engine choice as a pure function with unit tests
 - [ ] WebCodecs path for timeline thumbnails
+- [ ] Speed changes with audio on the fast path, once pitch can be held
 - [ ] OffscreenCanvas compositing for camera and effects at export time
 - [ ] Memory and speed profiling for 30 and 60 minute recordings
 - [ ] Storage usage and quota shown in the interface
