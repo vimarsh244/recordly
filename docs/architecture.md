@@ -134,8 +134,10 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-The dev and preview servers send them (`vite.config.ts`). Static hosts usually
-do not, so `public/coi-serviceworker.js` adds them to this app's own responses.
+The dev and preview servers send them (`vite.config.ts`) and so does Vercel
+(`vercel.json`). A host that sends neither leaves the page without isolation, so
+`public/coi-serviceworker.js` adds them to this app's own responses. The page
+skips the service worker entirely when the host already sends the headers.
 It reloads the page once, on the first visit, because isolation starts at the
 next navigation. Nothing leaves the device and no request is redirected. To turn
 it off, set `recordly.coi` to `off` in local storage. Everything still works

@@ -42,6 +42,17 @@ npm run preview
 The output in `dist/` is plain static files. It runs on Cloudflare Pages,
 Netlify, Vercel, GitHub Pages or any web server.
 
+Serve it with these two headers where you can, because they let the export step
+use every processor core:
+
+```text
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`vercel.json` sets them for Vercel. On a host that cannot set headers, a service
+worker adds them instead. Either way the app works.
+
 ## Supported browsers
 
 Chrome and Edge get the full experience. See
