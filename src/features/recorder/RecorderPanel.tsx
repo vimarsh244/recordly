@@ -91,11 +91,9 @@ export function RecorderPanel() {
     return (
       <div className="panel">
         <div className="panel-head">
-          <span className="panel-title">Recording is not available here</span>
+          <span className="panel-title">Screen recording is not supported here</span>
         </div>
-        <p className="note">
-          This browser cannot capture the screen. Try Chrome, Edge or another Chromium browser on a desktop computer.
-        </p>
+        <p className="note">Phones do not let a web page record the screen. Use a desktop browser.</p>
       </div>
     )
   }
