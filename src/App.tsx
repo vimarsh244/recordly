@@ -76,6 +76,10 @@ export function App() {
         )}
       </main>
 
+      <footer className="footer">
+        Recording, editing and export run on this device.
+      </footer>
+
       {idle || engine.status === 'countdown' ? <CameraPreview /> : null}
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
