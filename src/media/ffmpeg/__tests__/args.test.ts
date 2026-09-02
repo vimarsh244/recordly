@@ -20,12 +20,20 @@ describe('planExport', () => {
     expect(plan.outputName).toBe('output.mp4')
   })
 
-  it('seeks and limits duration for a trim', () => {
+  it('seeks and limits duration for a trim, both before the input', () => {
     const edits = { ...defaultEdits(60), trimStart: 5, trimEnd: 20 }
     const plan = planExport('input.webm', edits, options, source)
-    expect(plan.args.slice(0, 6)).toEqual(['-nostdin', '-y', '-ss', '5.000', '-i', 'input.webm'])
-    expect(plan.args).toContain('-t')
+    // `-t` after `-i` would cap the output instead of the source, which cuts a
+    // slowed clip short.
+    expect(plan.args.slice(0, 8)).toEqual(['-nostdin', '-y', '-ss', '5.000', '-t', '15.000', '-i', 'input.webm'])
+  })
+
+  it('keeps the whole selection when a trimmed clip is slowed down', () => {
+    const edits = { ...defaultEdits(60), trimStart: 5, trimEnd: 20, speed: 0.5 }
+    const plan = planExport('input.webm', edits, { ...options, format: 'mp4' }, source)
+    expect(plan.args.indexOf('-t')).toBeLessThan(plan.args.indexOf('-i'))
     expect(plan.args[plan.args.indexOf('-t') + 1]).toBe('15.000')
+    expect(plan.outputSeconds).toBe(30)
   })
 
   it('turns a fractional crop into pixels with even sides', () => {
@@ -48,6 +56,24 @@ describe('planExport', () => {
     expect(plan.args[plan.args.indexOf('-af') + 1]).toContain('atempo=2.0000')
   })
 
+  it('applies a fractional speed to video and audio', () => {
+    const edits = { ...defaultEdits(60), speed: 0.75 }
+    const plan = planExport('input.webm', edits, { ...options, format: 'mp4' }, source)
+    expect(plan.args[plan.args.indexOf('-vf') + 1]).toContain('setpts=1.3333*PTS')
+    expect(plan.args[plan.args.indexOf('-af') + 1]).toContain('atempo=0.7500')
+    expect(plan.outputSeconds).toBeCloseTo(80, 5)
+  })
+
+  it('writes VP8 for WebM, because the WebAssembly VP9 encoder crashes', () => {
+    const edits = { ...defaultEdits(60), speed: 0.75 }
+    const plan = planExport('input.webm', edits, options, source, { threads: 8 })
+    expect(plan.args).toContain('libvpx')
+    expect(plan.args).not.toContain('libvpx-vp9')
+    // VP9 only options. libvpx rejects them.
+    expect(plan.args).not.toContain('-row-mt')
+    expect(plan.args).not.toContain('-tile-columns')
+  })
+
   it('builds a palette chain for gif and never keeps audio', () => {
     const plan = planExport('input.webm', defaultEdits(60), { ...options, format: 'gif' }, source)
     expect(plan.args).toContain('-an')
@@ -60,8 +86,21 @@ describe('planExport', () => {
     expect(plan.args).toContain('pcm_s16le')
   })
 
-  it('scales to the requested height', () => {
+  it('scales to the requested height without enlarging a smaller clip', () => {
     const plan = planExport('input.webm', defaultEdits(60), { ...options, format: 'mp4', resolution: 720 }, source)
-    expect(plan.args[plan.args.indexOf('-vf') + 1]).toContain('scale=-2:720')
+    expect(plan.args[plan.args.indexOf('-vf') + 1]).toContain("scale=-2:'min(720,ih)'")
+  })
+
+  it('never asks for an odd width', () => {
+    // 480p from a 16:9 source used to give 853 pixels across, which x264 rejects.
+    const plan = planExport('input.webm', defaultEdits(60), { ...options, format: 'mp4', resolution: 480 }, source)
+    expect(plan.args.join(' ')).not.toContain('force_original_aspect_ratio')
+  })
+
+  it('picks an audio encoder that the WebAssembly build can run', () => {
+    const edits = { ...defaultEdits(60), speed: 0.75 }
+    const plan = planExport('input.webm', edits, options, source)
+    expect(plan.args).toContain('libvorbis')
+    expect(plan.args).not.toContain('libopus')
   })
 })

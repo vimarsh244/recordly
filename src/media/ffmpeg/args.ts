@@ -1,7 +1,11 @@
 import type { Edits, ExportOptions, ExportQuality, SourceInfo } from '../../features/project/types'
 
 const X264_CRF: Record<Exclude<ExportQuality, 'original'>, number> = { high: 20, balanced: 25, small: 31 }
-const VP9_CRF: Record<Exclude<ExportQuality, 'original'>, number> = { high: 28, balanced: 34, small: 40 }
+// VP8, not VP9. The WebAssembly build ships a VP9 encoder that reads past the
+// end of its own memory and kills the whole instance, so every WebM export on
+// this path failed. VP8 encodes correctly in the same build. The browser codec
+// path still writes VP9, so this only changes the software fall back.
+const VP8_CRF: Record<Exclude<ExportQuality, 'original'>, number> = { high: 24, balanced: 31, small: 38 }
 
 function crf(table: Record<Exclude<ExportQuality, 'original'>, number>, quality: ExportQuality): number {
   return quality === 'original' ? table.high : table[quality]
@@ -50,10 +54,14 @@ export function planExport(
   const wantsAudio = source.hasAudio && !edits.muted
   const speed = Math.min(2, Math.max(0.5, edits.speed))
 
+  // Both `-ss` and `-t` go before the input on purpose. After the input, `-t`
+  // limits the *output*, so a clip slowed to half speed stopped half way
+  // through the selection. Before the input it limits how much of the source
+  // is read, which is what a trim means whatever the speed is.
   const input: string[] = ['-nostdin', '-y']
   if (start > 0.01) input.push('-ss', start.toFixed(3))
-  input.push('-i', inputName)
   if (trimmed) input.push('-t', duration.toFixed(3))
+  input.push('-i', inputName)
 
   // Nothing to change and the container already matches: copy the streams.
   const canCopy =
@@ -85,7 +93,11 @@ export function planExport(
     videoFilters.push(`crop=${width}:${height}:${x}:${y}`)
   }
   if (options.resolution !== 'original') {
-    videoFilters.push(`scale=-2:${options.resolution}:force_original_aspect_ratio=decrease`)
+    // `min(height,ih)` never enlarges a clip that is already smaller, and the
+    // -2 width keeps the aspect and an even number of pixels. The older
+    // `force_original_aspect_ratio=decrease` computed the width itself and gave
+    // odd numbers, such as 853 for 480p from 720p, which x264 refuses.
+    videoFilters.push(`scale=-2:'min(${options.resolution},ih)'`)
   }
   if (speed !== 1) videoFilters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`)
   if (options.frameRate) videoFilters.push(`fps=${options.frameRate}`)
@@ -124,15 +136,11 @@ export function planExport(
   } else {
     args.push(
       '-c:v',
-      'libvpx-vp9',
+      'libvpx',
       '-b:v',
       '0',
       '-crf',
-      String(crf(VP9_CRF, options.quality)),
-      '-row-mt',
-      '1',
-      '-tile-columns',
-      threads > 4 ? '2' : '1',
+      String(crf(VP8_CRF, options.quality)),
       '-deadline',
       'realtime',
       '-cpu-used',
@@ -145,7 +153,10 @@ export function planExport(
   } else {
     if (audioFilters.length > 0) args.push('-af', audioFilters.join(','))
     if (options.format === 'mp4') args.push('-c:a', 'aac', '-b:a', '128k')
-    else args.push('-c:a', 'libopus', '-b:a', '128k')
+    // Vorbis, not Opus. The WebAssembly build's Opus encoder walks off the end
+    // of its memory on a stereo track and takes the instance with it. Vorbis in
+    // a WebM plays everywhere Opus does.
+    else args.push('-c:a', 'libvorbis', '-b:a', '128k')
   }
 
   if (options.format === 'mp4') args.push('-movflags', '+faststart')
