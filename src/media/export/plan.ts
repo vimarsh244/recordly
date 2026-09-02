@@ -47,13 +47,41 @@ export interface FastPlan {
   estimatedFrames: number
 }
 
+/**
+ * A GIF export. No browser encodes GIF, but every browser decodes the video,
+ * and the writer in `../gif/encoder` does the rest. That is far quicker than
+ * doing both jobs in software.
+ */
+export interface GifPlan {
+  /** Crop box in source pixels, or null for the whole frame. */
+  crop: { left: number; top: number; width: number; height: number } | null
+  width: number
+  height: number
+  frameRate: number
+  trimStart: number
+  trimEnd: number
+  /** Playback rate. 1 means no change. */
+  speed: number
+  /** Colours in the palette. One more slot is kept for transparency. */
+  maxColors: number
+  /** Frames the writer has to produce. Used for the progress readout. */
+  estimatedFrames: number
+}
+
 export interface ExportDecision {
   engine: Exclude<ExportEngine, 'copy'>
-  /** Present when the engine is `webcodecs`. */
+  /** Present when the engine is `webcodecs` and the output is not a GIF. */
   fast: FastPlan | null
+  /** Present when the engine is `webcodecs` and the output is a GIF. */
+  gif: GifPlan | null
   /** Why the slow engine was picked. Shown to the user and used in tests. */
   reason: string
 }
+
+/** Frames a second for a GIF when the user picked no rate. */
+const GIF_FRAME_RATE = 12
+/** Height of a GIF when the user kept the original size. */
+const GIF_HEIGHT = 480
 
 /** True when the request changes nothing about the file. */
 export function canCopy(edits: Edits, options: ExportOptions, source: SourceInfo): boolean {
@@ -80,15 +108,15 @@ export function canCopy(edits: Edits, options: ExportOptions, source: SourceInfo
 export function decideExport(edits: Edits, options: ExportOptions, source: SourceInfo): ExportDecision {
   const speed = Math.min(2, Math.max(0.5, edits.speed))
   const wantsAudio = source.hasAudio && !edits.muted
-  const slow = (reason: string): ExportDecision => ({ engine: 'ffmpeg', fast: null, reason })
+  const slow = (reason: string): ExportDecision => ({ engine: 'ffmpeg', fast: null, gif: null, reason })
 
-  // GIF needs a palette pass and MP3 needs an encoder no browser exposes.
-  if (options.format === 'gif') return slow('GIF needs the WebAssembly encoder.')
+  // MP3 needs an encoder no browser exposes.
   if (options.format === 'mp3') return slow('MP3 needs the WebAssembly encoder.')
 
   // Changing the rate of audio without changing its pitch is a filter, not a
   // codec feature. Video on its own only needs new timestamps, so that is fine.
-  if (Math.abs(speed - 1) > 0.001 && wantsAudio && options.format !== 'wav') {
+  // A GIF carries no audio, so a speed change there is only new timestamps.
+  if (Math.abs(speed - 1) > 0.001 && wantsAudio && options.format !== 'wav' && options.format !== 'gif') {
     return slow('Speed changes with audio need the WebAssembly encoder.')
   }
   if (options.format === 'wav' && Math.abs(speed - 1) > 0.001) {
@@ -113,6 +141,31 @@ export function decideExport(edits: Edits, options: ExportOptions, source: Sourc
 
   const height = options.resolution === 'original' ? null : even(Math.min(options.resolution, cropHeight))
   const frameRate = options.frameRate ?? null
+
+  if (options.format === 'gif') {
+    const cropWidth = crop ? crop.width : source.width
+    // A GIF at the full size of a screen recording is enormous, so the
+    // original size means 480 lines, which is what the old path also did.
+    const gifHeight = Math.max(2, Math.min(height ?? GIF_HEIGHT, cropHeight))
+    const gifWidth = Math.max(2, Math.round((cropWidth * gifHeight) / cropHeight))
+    const gifRate = frameRate ?? GIF_FRAME_RATE
+    return {
+      engine: 'webcodecs',
+      reason: 'Browser decoder with the built in GIF writer.',
+      fast: null,
+      gif: {
+        crop,
+        width: gifWidth,
+        height: gifHeight,
+        frameRate: gifRate,
+        trimStart: start,
+        trimEnd: end,
+        speed,
+        maxColors: 255,
+        estimatedFrames: Math.max(1, Math.ceil(outputSeconds * gifRate)),
+      },
+    }
+  }
   const audioOnly = options.format === 'wav'
   // An audio only file with no audio track is not a file. Let the slow path
   // report the failure, the way it always has.
@@ -121,6 +174,7 @@ export function decideExport(edits: Edits, options: ExportOptions, source: Sourc
   return {
     engine: 'webcodecs',
     reason: 'Browser codecs.',
+    gif: null,
     fast: {
       container: options.format === 'mp4' ? 'mp4' : options.format === 'webm' ? 'webm' : 'wav',
       videoCodecs: audioOnly ? [] : options.format === 'mp4' ? ['avc'] : ['vp9', 'vp8', 'av1'],

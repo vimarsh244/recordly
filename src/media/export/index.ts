@@ -1,5 +1,6 @@
 import type { Edits, ExportOptions, SourceInfo } from '../../features/project/types'
 import { preloadFfmpeg, runFfmpegExport } from '../ffmpeg/client'
+import { runGifExport, videoDecodeAvailable } from './gif'
 import { canCopy, decideExport, type ExportEngine } from './plan'
 import { ExportCancelled, type ExportHandle, type ExportProgress } from './types'
 import { preloadWebCodecs, runFastExport, webCodecsAvailable } from './webcodecs'
@@ -38,12 +39,22 @@ export interface StartExportOptions {
   onProgress: (progress: ExportProgress) => void
   /** Set by tests. Leave unset in the app. */
   allowFastPath?: boolean
+  /** Set by tests. Leave unset in the app. */
+  allowGifPath?: boolean
 }
 
-export function planEngine(edits: Edits, options: ExportOptions, source: SourceInfo, fastPathUsable = webCodecsAvailable()): ExportEngine {
+export function planEngine(
+  edits: Edits,
+  options: ExportOptions,
+  source: SourceInfo,
+  fastPathUsable = webCodecsAvailable(),
+  gifPathUsable = videoDecodeAvailable(),
+): ExportEngine {
   if (canCopy(edits, options, source)) return 'copy'
+  const decision = decideExport(edits, options, source)
+  if (decision.gif) return gifPathUsable ? 'webcodecs' : 'ffmpeg'
   if (!fastPathUsable) return 'ffmpeg'
-  return decideExport(edits, options, source).engine
+  return decision.engine
 }
 
 export function runExport({
@@ -54,12 +65,27 @@ export function runExport({
   source,
   onProgress,
   allowFastPath = webCodecsAvailable(),
+  allowGifPath = videoDecodeAvailable(),
 }: StartExportOptions): ExportHandle {
   let cancel: () => void = () => undefined
   let cancelled = false
 
   const result = (async (): Promise<Blob> => {
     const decision = decideExport(edits, options, source)
+
+    // A GIF only needs the decoder, not the encoder side of WebCodecs.
+    if (allowGifPath && decision.gif) {
+      const handle = runGifExport(input, decision.gif, onProgress)
+      cancel = () => handle.cancel()
+      try {
+        return await handle.result
+      } catch (error) {
+        if (cancelled) throw new ExportCancelled()
+        // The writer is new and FFmpeg still reads files the browser refuses,
+        // so a failure here costs time but never the export.
+        console.warn('Recordly: the fast GIF path could not do this export.', error)
+      }
+    }
 
     if (allowFastPath && decision.engine === 'webcodecs' && decision.fast) {
       const handle = runFastExport(input, decision.fast, onProgress)

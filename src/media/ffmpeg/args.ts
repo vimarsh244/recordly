@@ -76,14 +76,17 @@ export function planExport(
   const threadArgs = threads > 1 ? ['-threads', String(threads)] : []
   const outputSeconds = duration / speed
 
-  const videoFilters: string[] = []
+  let cropFilter: string | null = null
   if (edits.crop) {
     const width = even(source.width * edits.crop.width)
     const height = even(source.height * edits.crop.height)
     const x = Math.round(source.width * edits.crop.x)
     const y = Math.round(source.height * edits.crop.y)
-    videoFilters.push(`crop=${width}:${height}:${x}:${y}`)
+    cropFilter = `crop=${width}:${height}:${x}:${y}`
   }
+
+  const videoFilters: string[] = []
+  if (cropFilter) videoFilters.push(cropFilter)
   if (options.resolution !== 'original') {
     videoFilters.push(`scale=-2:${options.resolution}:force_original_aspect_ratio=decrease`)
   }
@@ -104,9 +107,18 @@ export function planExport(
   }
 
   if (options.format === 'gif') {
-    const gifFilters = [...videoFilters]
-    if (!options.frameRate) gifFilters.push('fps=12')
-    if (options.resolution === 'original') gifFilters.push('scale=-2:480:flags=lanczos')
+    // Only the fallback path comes here, and it encodes in software, so the
+    // order of the filters matters. Drop the frame rate first: every later
+    // step then runs on a quarter of the frames or fewer.
+    const gifFilters: string[] = []
+    if (cropFilter) gifFilters.push(cropFilter)
+    if (speed !== 1) gifFilters.push(`setpts=${(1 / speed).toFixed(4)}*PTS`)
+    gifFilters.push(`fps=${options.frameRate ?? 12}`)
+    gifFilters.push(
+      options.resolution === 'original'
+        ? 'scale=-2:480:flags=lanczos'
+        : `scale=-2:${options.resolution}:force_original_aspect_ratio=decrease:flags=lanczos`,
+    )
     const chain = `${gifFilters.join(',')},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer`
     return {
       args: [...input, '-an', ...threadArgs, '-filter_complex', chain, '-loop', '0', outputName],

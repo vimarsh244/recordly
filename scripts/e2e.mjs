@@ -1,5 +1,5 @@
 // Records a short clip with fake capture devices, trims it, crops it and
-// exports MP4. Run it against a preview build: npm run build && npm run preview
+// exports MP4 and GIF. Run it against a preview build: npm run build && npm run preview
 import { chromium } from 'playwright'
 
 const dir = process.env.RECORDLY_E2E_OUT ?? 'e2e-output'
@@ -69,5 +69,42 @@ await download.saveAs(path)
 console.log('exported to', path)
 await page.waitForTimeout(500)
 await page.screenshot({ path: `${dir}/exported.png` })
+// GIF used to go through the WebAssembly encoder, which took minutes. It now
+// uses the browser decoder and the built in writer, so it has to be quick.
+await page.selectOption('#export-format', 'gif')
+await page.waitForTimeout(300)
+const gifPromise = page.waitForEvent('download', { timeout: 240000 })
+const gifStarted = Date.now()
+await page.getByRole('button', { name: 'Export and download' }).click()
+const gifDownload = await gifPromise
+const gifPath = `${dir}/export.gif`
+await gifDownload.saveAs(gifPath)
+const gifBytes = await import('node:fs').then((fs) => fs.readFileSync(gifPath))
+const gifHeader = gifBytes.subarray(0, 6).toString('latin1')
+console.log(`exported ${gifPath}: ${gifHeader}, ${gifBytes.length} bytes in ${Date.now() - gifStarted} ms`)
+if (gifHeader !== 'GIF89a' || gifBytes[gifBytes.length - 1] !== 0x3b) {
+  throw new Error('The GIF is not a GIF.')
+}
+
+// The bytes are only a GIF if a real decoder says so, so hand them back to
+// the browser and read the frames out again.
+const gifCheck = await page.evaluate(async (base64) => {
+  const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+  const decoder = new ImageDecoder({ data: bytes, type: 'image/gif' })
+  await decoder.completed
+  const first = await decoder.decode({ frameIndex: 0 })
+  return {
+    frames: decoder.tracks.selectedTrack.frameCount,
+    width: first.image.displayWidth,
+    height: first.image.displayHeight,
+  }
+}, gifBytes.toString('base64'))
+console.log('gif decoded:', gifCheck)
+if (gifCheck.frames < 2 || gifCheck.width < 2 || gifCheck.height < 2) {
+  throw new Error('The GIF did not decode into frames.')
+}
+await page.waitForTimeout(500)
+await page.screenshot({ path: `${dir}/exported-gif.png` })
+
 console.log('errors:', errors)
 await browser.close()

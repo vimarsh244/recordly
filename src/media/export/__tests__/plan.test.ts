@@ -69,9 +69,39 @@ describe('decideExport', () => {
     expect(decision.fast).toBeNull()
   })
 
-  it('falls back to software for GIF and MP3', () => {
-    expect(decideExport(defaultEdits(60), { ...options, format: 'gif' }, source).engine).toBe('ffmpeg')
+  it('falls back to software for MP3', () => {
     expect(decideExport(defaultEdits(60), { ...options, format: 'mp3' }, source).engine).toBe('ffmpeg')
+  })
+
+  it('writes a GIF with the browser decoder', () => {
+    const decision = decideExport(defaultEdits(60), { ...options, format: 'gif' }, source)
+    expect(decision.engine).toBe('webcodecs')
+    expect(decision.fast).toBeNull()
+    expect(decision.gif?.frameRate).toBe(12)
+    expect(decision.gif?.height).toBe(480)
+    expect(decision.gif?.width).toBe(853)
+    expect(decision.gif?.estimatedFrames).toBe(720)
+  })
+
+  it('keeps a GIF within the size the user picked', () => {
+    const decision = decideExport(defaultEdits(60), { ...options, format: 'gif', resolution: 720 }, source)
+    expect(decision.gif?.height).toBe(720)
+    expect(decision.gif?.width).toBe(1280)
+  })
+
+  it('keeps a GIF on the fast path when the speed changes', () => {
+    const decision = decideExport({ ...defaultEdits(60), speed: 2 }, { ...options, format: 'gif' }, source)
+    expect(decision.engine).toBe('webcodecs')
+    expect(decision.gif?.speed).toBe(2)
+    expect(decision.gif?.estimatedFrames).toBe(360)
+  })
+
+  it('sizes a cropped GIF from the crop, not the frame', () => {
+    const edits = { ...defaultEdits(60), crop: { x: 0, y: 0, width: 0.5, height: 0.5 } }
+    const decision = decideExport(edits, { ...options, format: 'gif' }, source)
+    expect(decision.gif?.crop).toEqual({ left: 0, top: 0, width: 1280, height: 720 })
+    expect(decision.gif?.height).toBe(480)
+    expect(decision.gif?.width).toBe(853)
   })
 
   it('writes WAV without a video track', () => {
