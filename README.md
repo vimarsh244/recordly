@@ -71,9 +71,8 @@ upload path in the code. See [docs/privacy.md](docs/privacy.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The build plan lives in
-[docs/plan-to-build.md](docs/plan-to-build.md) and the current state of the work
-is tracked in [docs/todo.md](docs/todo.md).
+The build plan lives in [docs/plan-to-build.md](docs/plan-to-build.md) and the
+current state of the work is tracked in [docs/todo.md](docs/todo.md).
 
 ## License
 
