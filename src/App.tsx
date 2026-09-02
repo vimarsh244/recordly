@@ -16,6 +16,7 @@ export function App() {
   const recording = useApp((state) => state.recording)
   const theme = useApp((state) => state.settings.theme)
   const openRecording = useApp((state) => state.openRecording)
+  const closeRecording = useApp((state) => state.closeRecording)
   const engine = useEngineState()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -47,10 +48,17 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">
+        <button
+          type="button"
+          className="brand"
+          title="Home"
+          aria-label="Home"
+          onClick={closeRecording}
+          disabled={!recording}
+        >
           <span className="brand-dot" aria-hidden="true" />
           Recordly
-        </span>
+        </button>
         <button className="btn btn-sm btn-ghost" onClick={() => setSettingsOpen(true)}>
           Settings
         </button>
