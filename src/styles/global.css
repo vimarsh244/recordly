@@ -242,11 +242,20 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   inset: 0;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 14px;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
+  z-index: 50;
+  cursor: pointer;
+}
+.countdown-value {
   font-size: 84px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  z-index: 50;
+}
+.countdown-hint {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 /* Editor */
