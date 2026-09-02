@@ -100,7 +100,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   flex: 1;
   display: flex;
   justify-content: center;
-  padding: 40px 20px 64px;
+  padding: 28px 24px 40px;
 }
 
 .stack { display: flex; flex-direction: column; }
@@ -110,7 +110,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 /* Recorder panel */
 .panel {
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -118,7 +118,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   padding: 6px;
 }
 
-.panel-wide { max-width: 1040px; }
+.panel-wide { max-width: 1200px; }
 
 .panel-head {
   padding: 14px 14px 12px;
@@ -234,8 +234,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 }
 
 /* Editor */
-.editor { display: grid; grid-template-columns: minmax(0, 1fr) 268px; gap: 16px; }
-@media (max-width: 860px) { .editor { grid-template-columns: minmax(0, 1fr); } }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 18px; }
+@media (max-width: 940px) { .editor { grid-template-columns: minmax(0, 1fr); } }
 
 .stage {
   position: relative;
@@ -245,9 +245,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   overflow: hidden;
   display: grid;
   place-items: center;
-  min-height: 240px;
+  min-height: 280px;
 }
-.stage video { display: block; max-width: 100%; max-height: 58vh; background: #000; }
+.stage video { display: block; max-width: 100%; max-height: 66vh; background: #000; }
 
 .cam-overlay {
   position: absolute;
@@ -275,7 +275,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 
 .timeline {
   position: relative;
-  height: 54px;
+  height: 62px;
   margin-top: 12px;
   background: color-mix(in srgb, var(--text-muted) 16%, var(--surface));
   border: 1px solid var(--border);
@@ -405,7 +405,7 @@ dialog::backdrop { background: rgba(20, 16, 12, 0.42); }
 .banner .msg { flex: 1; }
 
 .footer {
-  padding: 18px 20px 28px;
+  padding: 14px 20px 22px;
   color: var(--text-muted);
   font-size: 12.5px;
   text-align: center;

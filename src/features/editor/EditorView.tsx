@@ -113,7 +113,7 @@ export function EditorView({ recording }: { recording: Recording }) {
     ? {
         position: 'relative',
         overflow: 'hidden',
-        height: '58vh',
+        height: '66vh',
         aspectRatio: `${recording.width * cropped.width} / ${recording.height * cropped.height}`,
       }
     : { position: 'relative', overflow: 'hidden', lineHeight: 0 }
