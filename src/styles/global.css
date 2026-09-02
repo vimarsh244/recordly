@@ -271,6 +271,8 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   border-radius: 2px;
 }
 
+.timeline-wrap { position: relative; }
+
 .timeline {
   position: relative;
   height: 54px;
@@ -294,6 +296,36 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   cursor: ew-resize;
 }
 .tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); }
+
+/* Frame shown while you scrub or drag a trim handle. */
+.tl-preview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  width: 180px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+  z-index: 3;
+}
+.tl-preview video {
+  display: block;
+  width: 100%;
+  border-radius: 3px;
+  background: #000;
+  object-fit: contain;
+}
+.tl-preview-time {
+  display: block;
+  text-align: center;
+  padding-top: 3px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
 
 .sidebar { display: flex; flex-direction: column; gap: 6px; }
 

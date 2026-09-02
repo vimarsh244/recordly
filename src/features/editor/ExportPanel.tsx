@@ -155,9 +155,21 @@ export function ExportPanel({ recording, edits }: Props) {
         </div>
       ) : (
         <button className="btn btn-primary btn-block" onClick={() => void start()}>
-          Export
+          Export and download
         </button>
       )}
+
+      <div className="row" style={{ gap: 8, padding: '10px 10px 0' }}>
+        <button
+          className="btn btn-sm btn-ghost"
+          disabled={busy}
+          onClick={() => download(recording.screen.blob, `${safeFileName(recording.name)}.${recording.container}`)}
+        >
+          Download original
+        </button>
+        <span className="meta">{formatBytes(recording.bytes)}</span>
+      </div>
+      <p className="note">The original is the untouched recording. Your trim, crop and audio edits are not in it.</p>
 
       {status ? <p className="note">{status}</p> : null}
       {heavyGif ? <p className="note">Long GIFs get large. Trim the selection or pick a smaller size.</p> : null}
